@@ -32,10 +32,19 @@ def check_mask(mask, shape=(256, 256)) -> np.ndarray:
     return (mask > 0).astype(np.uint8)
 
 
-def evaluate(method, load_image, load_mask, ids):
-    """Run `method(image)` on every case in `ids`, print the mean Dice and
-    return {case_id: Dice}."""
-    scores = {cid: dice(check_mask(method(load_image(cid))), load_mask(cid)) for cid in ids}
+def evaluate(method, load_image, load_mask, ids, load_liver=None):
+    """Run `method` on every case in `ids`, print the mean Dice and return {case_id: Dice}.
+
+    Without liver masks the method is called as method(image).
+    With `load_liver` given, it is called as method(image, liver); liver may be None
+    for a case whose liver mask is missing.
+    """
+    def predict(cid):
+        if load_liver is None:
+            return method(load_image(cid))
+        return method(load_image(cid), load_liver(cid))
+
+    scores = {cid: dice(check_mask(predict(cid)), load_mask(cid)) for cid in ids}
     print(f"{len(ids)} cases   mean Dice {np.mean(list(scores.values())):.3f}")
     return scores
 
