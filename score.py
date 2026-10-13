@@ -1,46 +1,63 @@
-# score.py
-"""Scores a predictions folder against ground truth.
-Students: run on your own predictions only if you were given ground truth (practice set).
-Organisers: run on each team's submitted folder with the private ground truth.
-Usage : python score.py predictions organiser_only/ground_truth
-Needs : pip install numpy scipy
 """
-import sys, glob, os
+score.py — the scoring used in the hackathon
+
+Students: the starter notebook calls `evaluate(segment, ...)` to score your method
+on the development set. It uses the same Dice function the organisers use on the
+test set, so your development score is calculated exactly like your final score.
+
+Organisers: score a team's submission against the hidden test masks with
+    python score.py teamname.csv path/to/test_masks
+(masks named test_01_mask.npy ... test_10_mask.npy)
+"""
+from __future__ import annotations
+
+import os
+import sys
+
 import numpy as np
-from scipy.ndimage import distance_transform_edt, binary_erosion
-from starter import normalize_intensity
 
-def dice(gt, pr):
-    inter = (gt & pr).sum()
-    total = gt.sum() + pr.sum()
-    return 2 * inter / total if total else 1.0
 
-def hd95(gt, pr):
-    """95th percentile boundary distance in pixels. Empty prediction -> image diagonal."""
-    if pr.sum() == 0:
-        return float(np.hypot(*gt.shape))
-    gt_edge = gt & ~binary_erosion(gt)
-    pr_edge = pr & ~binary_erosion(pr)
-    d_to_gt = distance_transform_edt(~gt_edge)[pr_edge]
-    d_to_pr = distance_transform_edt(~pr_edge)[gt_edge]
-    return float(np.percentile(np.hstack([d_to_gt, d_to_pr]), 95))
+def dice(pred, gt) -> float:
+    """Dice = 2|P∩G| / (|P|+|G|). 1 = perfect overlap, 0 = no overlap."""
+    pred, gt = np.asarray(pred) > 0, np.asarray(gt) > 0
+    total = pred.sum() + gt.sum()
+    return 1.0 if total == 0 else float(2 * (pred & gt).sum() / total)
 
-def score_folder(pred_dir, gt_dir):
-    rows = []
-    for gt_file in sorted(glob.glob(os.path.join(gt_dir, "*.npy"))):
-        name = os.path.basename(gt_file)
-        pred_file = os.path.join(pred_dir, name)
-        gt = np.load(gt_file).astype(bool)
-        gt = normalize_intensity(gt)
-        pr = np.load(pred_file).astype(bool) if os.path.exists(pred_file) else np.zeros_like(gt)
-        if pr.shape != gt.shape:
-            raise ValueError(f"{name}: shape {pr.shape} != {gt.shape}")
-        rows.append((name, dice(gt, pr), hd95(gt, pr)))
-    return rows
+
+def check_mask(mask, shape=(256, 256)) -> np.ndarray:
+    """Turn a method's output into a 0/1 mask, with a clear error if it is the wrong shape."""
+    mask = np.asarray(mask)
+    if mask.shape != shape:
+        raise ValueError(f"your method returned shape {mask.shape}, expected {shape}")
+    return (mask > 0).astype(np.uint8)
+
+
+def evaluate(method, load_image, load_mask, ids):
+    """Run `method(image)` on every case in `ids`, print the mean Dice and
+    return {case_id: Dice}."""
+    scores = {cid: dice(check_mask(method(load_image(cid))), load_mask(cid)) for cid in ids}
+    print(f"{len(ids)} cases   mean Dice {np.mean(list(scores.values())):.3f}")
+    return scores
+
+
+def score_submission(csv_path, mask_dir):
+    """Organisers: score a submission CSV against the hidden masks in `mask_dir`."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # find submission_utils.py next to this file
+    from submission_utils import read_submission
+    preds = read_submission(csv_path, shape=(256, 256))
+    ids = sorted(f[:-len("_mask.npy")] for f in os.listdir(mask_dir) if f.endswith("_mask.npy"))
+    scores = {}
+    for cid in ids:
+        gt = np.load(os.path.join(mask_dir, f"{cid}_mask.npy"))
+        scores[cid] = dice(preds.get(cid, np.zeros_like(gt)), gt)   # missing case = empty mask
+    return scores
+
 
 if __name__ == "__main__":
-    rows = score_folder(sys.argv[1], sys.argv[2])
-    print(f"{'patient':<16}{'Dice':>8}{'HD95(px)':>10}")
-    for n, d, h in rows:
-        print(f"{n[:-4]:<16}{d:>8.3f}{h:>10.1f}")
-    print(f"{'MEAN':<16}{np.mean([r[1] for r in rows]):>8.3f}{np.mean([r[2] for r in rows]):>10.1f}")
+    if len(sys.argv) != 3:
+        sys.exit("usage: python score.py teamname.csv path/to/test_masks")
+    scores = score_submission(sys.argv[1], sys.argv[2])
+    print(f"{'case':<10}{'Dice':>8}")
+    for cid, d in scores.items():
+        print(f"{cid:<10}{d:>8.3f}")
+    print(f"{'MEAN':<10}{np.mean(list(scores.values())):>8.3f}")
