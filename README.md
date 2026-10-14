@@ -13,7 +13,7 @@ Each image is a coronal CT slice of the abdomen with **exactly one lesion** in t
    ```
    pip install numpy pandas matplotlib scipy ipykernel
    ```
-4. **Open the unzipped folder in VS Code** (File → Open Folder), open the unzipper folde, then open `starter.ipynb`, choose your Python environment when asked, then **Run All**.
+4. **Open the unzipped folder in VS Code** (File → Open Folder), open the unzipped folder, then open `starter.ipynb`, choose your Python environment when asked, then **Run All**.
    The first cell should print: `84 development images, 10 test images`.
 
 Your method goes in `segment()`. Add as many helper functions and exploration cells as you like, as long as `segment()` calls your helpers. Loading the data, scoring and making the submission file are done for you.
